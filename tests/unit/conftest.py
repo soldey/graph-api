@@ -33,22 +33,25 @@ async def database():
 
 @pytest_asyncio.fixture(scope="session")
 async def graph_service(database):
-    node_service = NodeService(database)
-    edge_service = EdgeService(database, node_service)
+    config = Config()
+    node_service = NodeService(config, database)
+    edge_service = EdgeService(config, database, node_service)
     graph_service = GraphService(database, node_service, edge_service)
     yield graph_service
 
 
 @pytest_asyncio.fixture(scope="session")
 async def node_service(database):
-    node_service = NodeService(database)
+    config = Config()
+    node_service = NodeService(config, database)
     yield node_service
 
 
 @pytest_asyncio.fixture(scope="session")
 async def services(database):
-    node_service = NodeService(database)
-    edge_service = EdgeService(database, node_service)
+    config = Config()
+    node_service = NodeService(config, database)
+    edge_service = EdgeService(config, database, node_service)
     graph_service = GraphService(database, node_service, edge_service)
     yield node_service, edge_service, graph_service
 

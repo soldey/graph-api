@@ -9,10 +9,14 @@ from src.common.db import metadata
 
 
 class NodeTypeEnum(enum.Enum):
-    CROSSROAD = "CROSSROAD"
-    STOP = "STOP"
+    DRIVE = "DRIVE"
+    TRAIN = "TRAIN"
     PLATFORM = "PLATFORM"
-    NONE = "NONE"
+    WALK = "WALK"
+    TRAM = "TRAM"
+    BUS = "BUS"
+    TROLLEYBUS = "TROLLEYBUS"
+    SUBWAY = "SUBWAY"
 
 
 func: Callable
@@ -22,7 +26,7 @@ nodes = Table(
     "nodes",
     metadata,
     Column("id", Integer, primary_key=True, server_default=nodes_id_seq.next_value()),
-    Column("type", Enum(NodeTypeEnum), nullable=False, default=NodeTypeEnum.CROSSROAD),
+    Column("type", Enum(NodeTypeEnum), nullable=False, default=NodeTypeEnum.DRIVE),
     Column("properties", JSONB(astext_type=Text()), nullable=False, server_default=text("'{}'::jsonb")),
     Column("route", String(50), nullable=True, default=None),
     Column(

@@ -14,7 +14,7 @@ from src.node.node_entity import NodeEntity
 
 
 create_node_dto = CreateNodeDTO(
-    type=NodeTypeEnum.CROSSROAD,
+    type=NodeTypeEnum.DRIVE,
     point=Geometry(
         type='Point',
         coordinates=[30.307160601007837, 59.94951849764507]
@@ -22,7 +22,7 @@ create_node_dto = CreateNodeDTO(
     route="route 4"
 )
 create_node_dto1 = CreateNodeDTO(
-    type=NodeTypeEnum.CROSSROAD,
+    type=NodeTypeEnum.DRIVE,
     point=Geometry(
         type='Point',
         coordinates=[30.32309539596909, 59.95291638534613]
@@ -36,7 +36,7 @@ async def test_creating_node(node_service, create_nodes):
     
     node, _ = create_nodes
     expected = NodeEntity(
-        0, NodeTypeEnum.CROSSROAD,
+        0, NodeTypeEnum.DRIVE,
         geom.shape({"type": create_node_dto.point.type, "coordinates": create_node_dto.point.coordinates}),
         {},
         datetime.now(), datetime.now()
@@ -65,7 +65,7 @@ async def test_select_nodes(node_service, create_nodes):
 
     node1, node2 = create_nodes
 
-    nodes = await node_service.select_many(SelectNodesDTO(type=NodeTypeEnum.STOP))
+    nodes = await node_service.select_many(SelectNodesDTO(type=NodeTypeEnum.PLATFORM))
     assert len(nodes) == 0
 
     nodes = await node_service.select_many(SelectNodesDTO())

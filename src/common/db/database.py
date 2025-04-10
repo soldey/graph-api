@@ -70,7 +70,7 @@ class DatabaseModule:
             await tr.start()
             try:
                 await conn.copy_to_table(
-                    table_name=table_name, source=csv_name, columns=columns, delimiter=","
+                    table_name=table_name, source=csv_name, columns=columns, delimiter="&"
                 )
                 res = await conn.fetch(
                     f"""

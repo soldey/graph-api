@@ -3,6 +3,7 @@ from pathlib import Path
 
 from asyncpg import UniqueViolationError
 from fastapi import HTTPException
+from iduconfig import Config
 from loguru import logger
 from pandas import DataFrame
 from pandas.core.util.hashing import hash_pandas_object
@@ -23,8 +24,10 @@ from src.node.node_entity import NodeEntity
 
 
 class NodeService:
-    def __init__(self, database: DatabaseModule):
+    def __init__(self, config: Config, database: DatabaseModule):
         self.database = database
+        self.csv_dir = Path().absolute() / config.get("CSV_DIR")
+        self.csv_dir.mkdir(exist_ok=True)
 
     async def create(self, dto: CreateNodeDTO) -> NodeEntity:
         """Create one node.
@@ -69,21 +72,23 @@ class NodeService:
     
     async def create_many(self, df_nodes: DataFrame) -> DataFrame:
         
+        logger.info("Starting bulk nodes upload")
+        
         df_nodes["point"] = df_nodes["point"].apply(lambda x: "SRID=4326; " + str(x.as_shapely_geometry()))
         df_nodes["type"] = df_nodes["type"].apply(lambda x: x.value)
         df = df_nodes.copy()
         
         df_hash = hashlib.sha256(df['point'].values).hexdigest()
-        csv_name = f"{df_hash[:12]}.csv"
+        csv_name = f"nodes_{df_hash[:12]}.csv"
         
         df_nodes["new_id"] = [None] * len(df_nodes)
         
         columns = df.columns.to_list()
         done = False
         while not done:
-            df.to_csv(Path().absolute() / csv_name, sep=",", header=False, lineterminator="\n", index=False)
+            df.to_csv(self.csv_dir / csv_name, sep="&", header=False, lineterminator="\n", index=False)
             try:
-                res = [record["id"] for record in await self.database.execute_copy("nodes", csv_name, columns)]
+                res = [record["id"] for record in await self.database.execute_copy("nodes", str(self.csv_dir / csv_name), columns)]
                 logger.success(f"Successfully added {len(res)} nodes")
                 
                 j = 0
@@ -94,10 +99,9 @@ class NodeService:
                 
                 done = True
             except UniqueViolationError as e:
-                df_nodes, df = await self._conflict_resolver(e, df_nodes, df)
-                
                 logger.error(e)
-        (Path().absolute() / csv_name).unlink()
+                df_nodes, df = await self._conflict_resolver(e, df_nodes, df)
+        (self.csv_dir / csv_name).unlink()
         return df_nodes
     
     async def _conflict_resolver(self, e: Exception, df_nodes: DataFrame, df: DataFrame) -> tuple[DataFrame, DataFrame]:

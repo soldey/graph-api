@@ -10,7 +10,7 @@ from src.node.node_entity import NodeEntity
 
 class NodeDTO(BaseModel):
     id: int = Field(ge=0)
-    type: NodeTypeEnum = Field(description="node type", examples=[NodeTypeEnum.CROSSROAD, NodeTypeEnum.STOP])
+    type: NodeTypeEnum = Field(description="node type", examples=[NodeTypeEnum.DRIVE, NodeTypeEnum.PLATFORM])
     point: Geometry = Field(description="geometry of node")
     route: Optional[str] = Field(description="route name", default=None)
     properties: dict = Field(description="additional parameters")

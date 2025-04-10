@@ -129,7 +129,7 @@ class GraphService:
         columns = df.columns.to_list()
         done = False
         while not done:
-            df.to_csv(Path().absolute() / csv_name, sep=",", header=False, lineterminator="\n", index=False)
+            df.to_csv(Path().absolute() / csv_name, sep="&", header=False, lineterminator="\n", index=False)
             try:
                 res = [record["id"] for record in await self.database.execute_copy("graph_edges", csv_name, columns)]
                 logger.success(f"Successfully added {len(res)} relationships")
@@ -159,6 +159,8 @@ class GraphService:
         return df
     
     async def bulk_graph_upload(self, nodes: list[CreateNodeDTO], edges: list[CreateEdgeDTO], graph: int):
+        logger.info("Starting bulk graph upload")
+        
         df_nodes = DataFrame(data=[dto.__dict__ for dto in nodes])
         df_nodes = await self.node_service.create_many(df_nodes)
         new_nodes_id = df_nodes["new_id"].to_dict()

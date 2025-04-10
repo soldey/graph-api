@@ -1,11 +1,14 @@
 import concurrent.futures
+import csv
 import hashlib
 from io import StringIO, BytesIO
+from json.decoder import NaN
 from math import ceil
 from pathlib import Path
 
 from asyncpg import UniqueViolationError
 from fastapi import HTTPException
+from iduconfig import Config
 from loguru import logger
 from pandas import DataFrame
 from shapely import from_wkb
@@ -26,9 +29,11 @@ from src.edge.edge_entity import EdgeEntity
 
 
 class EdgeService:
-    def __init__(self, database: DatabaseModule, node_service: NodeService):
+    def __init__(self, config: Config, database: DatabaseModule, node_service: NodeService):
         self.database = database
         self.node_service = node_service
+        self.csv_dir = Path().absolute() / config.get("CSV_DIR")
+        self.csv_dir.mkdir(exist_ok=True)
 
     async def create(self, dto: CreateEdgeDTO) -> EdgeEntity:
         """Creates one edge or returns existing one by geometry.
@@ -87,15 +92,6 @@ class EdgeService:
         logger.info("Edge committed")
         return EdgeEntity(**result)
     
-    async def _create_csv(self, dtos: list[CreateEdgeDTO]) -> str:
-        if len(dtos) == 0:
-            return ""
-        
-        csv_string = ",".join(dtos[0].__dict__.keys()) + "\n"
-        for dto in dtos:
-            csv_string += ",".join(dto.__dict__.values())
-        return csv_string
-    
     async def create_many(self, df_edges: DataFrame) -> DataFrame:
         """Bulk edge creation.
         
@@ -106,29 +102,27 @@ class EdgeService:
 
         """
         
-        df_edges = df_edges.drop("graph", axis="columns")
-        df_edges["geometry"] = df_edges["geometry"].apply(lambda x: str(x.as_shapely_geometry()))
+        logger.info("Starting bulk edge upload")
+        
+        df_edges.drop("graph", axis="columns", inplace=True)
+        df_edges["geometry"] = df_edges["geometry"].apply(lambda x: "SRID=4326; " + str(x.as_shapely_geometry()))
         df_edges["type"] = df_edges["type"].apply(lambda x: x.value)
         df_edges["weight_type"] = df_edges["weight_type"].apply(lambda x: x.value)
         df_edges["level"] = df_edges["level"].apply(lambda x: x.value)
+        df_edges["route"] = df_edges["route"].fillna("")
         df = df_edges.copy()
         
         df_hash = hashlib.sha256(df['geometry'].values).hexdigest()
-        csv_name = f"{df_hash[:12]}.csv"
+        csv_name = f"edges_{df_hash[:12]}.csv"
         
         df_edges["new_id"] = [None] * len(df_edges)
         
         columns = df.columns.to_list()
         done = False
         while not done:
-            csv_string = df.to_csv(sep=",", header=False, lineterminator="\n", index=False).split("\n")
-            with open(Path().absolute() / csv_name, "w") as fout:
-                bytes_string = "\n".join(csv_string[-1])
-                print(bytes_string)
-                fout.write(bytes_string)
-            # df.to_csv(Path().absolute() / csv_name, sep=",", header=False, lineterminator="\n", index=False)
+            df.to_csv(self.csv_dir / csv_name, sep="&", header=False, lineterminator="\n", index=False, quoting=csv.QUOTE_NONE, quotechar='', escapechar='\\')
             try:
-                res = [record["id"] for record in await self.database.execute_copy("edges", csv_name, columns)]
+                res = [record["id"] for record in await self.database.execute_copy("edges", str(self.csv_dir / csv_name), columns)]
                 logger.success(f"Successfully added {len(res)} edges")
 
                 j = 0
@@ -139,10 +133,10 @@ class EdgeService:
                 
                 done = True
             except UniqueViolationError as e:
-                df_edges, df = await self._conflict_resolver(e, df_edges, df)
-                
                 logger.error(e)
-        (Path().absolute() / csv_name).unlink()
+                df_edges, df = await self._conflict_resolver(e, df_edges, df)
+        
+        (self.csv_dir / csv_name).unlink()
         return df_edges
     
     async def _conflict_resolver(self, e: Exception, df_edges: DataFrame, df: DataFrame) -> tuple[DataFrame, DataFrame]:
@@ -152,7 +146,7 @@ class EdgeService:
         
         filtered_error = (e.detail[5:-17]).split(")=(")
         values = filtered_error[1].split(", ")
-        recovered_geometry = str(from_wkb(values[1]))
+        recovered_geometry = str(from_wkb(values[3]))
         found = int(df_edges[
                         (df_edges["u"] == int(values[0])) &
                         (df_edges["v"] == int(values[1])) &
@@ -223,7 +217,7 @@ class EdgeService:
             .where(edges.c.u == u)
             .where(edges.c.v == v)
             .where(edges.c.type == _type)
-            .where(geofunc.ST_Equals(geofunc.ST_GeomFromText(str(geometry), text("4326")), edges.c.geometry))
+            .where(geofunc.ST_OrderingEquals(geofunc.ST_GeomFromText(str(geometry), text("4326")), edges.c.geometry))
             .where(edges.c.route == route)
         )
         result = (await self.database.execute_query(statement)).mappings().one_or_none()

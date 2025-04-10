@@ -22,4 +22,5 @@ class CreateEdgeDTO(BaseModel):
 
 
 class CreateEdgesDTO(BaseModel):
-    dtos: list[CreateEdgeDTO] = Field(description="list of dtos")
+    nodes: list[CreateNodeDTO] = Field(description="list of node dtos")
+    edges: list[CreateEdgeDTO] = Field(description="list of node dtos")

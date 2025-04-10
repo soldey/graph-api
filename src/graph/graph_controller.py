@@ -1,7 +1,7 @@
 import pickle
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Body
+from fastapi import APIRouter, Depends, Path, Body, Query
 from fastapi.responses import PlainTextResponse
 from loguru import logger
 from starlette.responses import Response
@@ -47,10 +47,13 @@ async def add_edge(dto: Annotated[CreateEdgeDTO, Body(embed=True)]):
 
 
 @graph_router.post("/add-edge-bulk", response_model=list[GraphEdgeDTO])
-async def add_edge_bulk(dto: Annotated[CreateEdgesDTO, Body()]):
+async def add_edge_bulk(
+        dto: Annotated[CreateEdgesDTO, Body(embed=True)],
+        graph: Annotated[int, Query()]
+):
     logger.info(f"Call - {_router_prefix}/add-edge-bulk")
     
-    return [await GraphEdgeDTO.from_service(graphEdge) for graphEdge in (await graph_service.add_edges(dto.dtos))]
+    return await graph_service.bulk_graph_upload(dto.nodes, dto.edges, graph)
 
 
 @graph_router.post("/build", response_class=PlainTextResponse)

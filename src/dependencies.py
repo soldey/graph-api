@@ -57,6 +57,6 @@ class InterceptHandler(logging.Handler):
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
 database = DatabaseModule(config)
-node_service = NodeService(database)
-edge_service = EdgeService(database, node_service)
+node_service = NodeService(config, database)
+edge_service = EdgeService(config, database, node_service)
 graph_service = GraphService(database, node_service, edge_service)

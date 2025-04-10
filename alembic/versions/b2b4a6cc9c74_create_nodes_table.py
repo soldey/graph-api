@@ -27,7 +27,7 @@ def upgrade() -> None:
     op.create_table(
         "nodes",
         Column("id", Integer, primary_key=True),
-        Column("type", Enum(NodeTypeEnum, name="nodetypeenum"), nullable=False, default=NodeTypeEnum.CROSSROAD),
+        Column("type", Enum(NodeTypeEnum, name="nodetypeenum"), nullable=False, default=NodeTypeEnum.DRIVE),
         Column("properties", JSONB(astext_type=Text()), nullable=False, server_default=text("'{}'::jsonb")),
         Column("route", String(50), nullable=True, default=None),
         Column(

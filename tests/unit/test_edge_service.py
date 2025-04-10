@@ -35,8 +35,8 @@ create_edge_dto = CreateEdgeDTO(
     )
 )
 create_edge_dto2 = CreateEdgeDTO(
-    u=0,
-    v=1,
+    u=1,
+    v=0,
     type=EdgeTypeEnum.DRIVE,
     weight=1.,
     weight_type=WeightTypeEnum.DISTANCE,
