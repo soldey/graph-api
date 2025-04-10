@@ -1,0 +1,3 @@
+# .coveragerc file content
+[run]
+omit = .venv/*, tests/*, *_controller.py, *_dto.py, app.py, dependencies.py

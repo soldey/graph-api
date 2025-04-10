@@ -1,0 +1,11 @@
+services:
+  graph_db:
+    container_name: graph_db
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: graph_db
+      PGDATA: /data/postgres
+    ports:
+      - "5432:5432"

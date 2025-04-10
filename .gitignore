@@ -1,0 +1,10 @@
+.pytest_cache
+htmlcov
+.coverage
+.env.*
+.idea
+venv
+*.csv
+load.py
+*.json
+logs
