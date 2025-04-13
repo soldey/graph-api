@@ -94,7 +94,7 @@ class NodeService:
                 j = 0
                 for i in range(len(df_nodes)):
                     if df_nodes["new_id"][i] is None:
-                        df_nodes["new_id"][i] = res[j]
+                        df_nodes.loc[i, "new_id"] = res[j]
                         j += 1
                 
                 done = True
@@ -117,7 +117,7 @@ class NodeService:
                         (df_nodes["point"] == "SRID=4326; " + recovered_geometry) &
                         (df_nodes["route"] == values[2])
                         ].iloc[0].name)
-        df_nodes["new_id"][found] = await self.select_one_by_unique_critique(
+        df_nodes.loc[found, "new_id"] = await self.select_one_by_unique_critique(
             values[0], recovered_geometry, values[2]
         )
         df = df.drop(index=found)

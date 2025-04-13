@@ -128,7 +128,7 @@ class EdgeService:
                 j = 0
                 for i in range(len(df_edges)):
                     if df_edges["new_id"][i] is None:
-                        df_edges["new_id"][i] = res[j]
+                        df_edges.loc[i, "new_id"] = res[j]
                         j += 1
                 
                 done = True
@@ -154,7 +154,7 @@ class EdgeService:
                         (df_edges["geometry"] == "SRID=4326; " + recovered_geometry) &
                         (df_edges["route"] == values[4])
                         ].iloc[0].name)
-        df_edges["new_id"][found] = await self.select_one_by_unique_critique(
+        df_edges.loc[found, "new_id"] = await self.select_one_by_unique_critique(
             int(values[0]), int(values[1]), values[2], recovered_geometry, values[4]
         )
         df = df.drop(index=found)
@@ -244,6 +244,7 @@ class EdgeService:
                 edges.c.weight_type,
                 edges.c.level,
                 edges.c.speed,
+                edges.c.route,
                 edges.c.properties,
                 cast(geofunc.ST_AsGeoJSON(edges.c.geometry), JSONB).label("geometry"),
                 edges.c.created_at,
