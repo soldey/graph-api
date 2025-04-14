@@ -212,7 +212,7 @@ class NodeService:
         if dto.type:
             statement = statement.where(nodes.c.type == dto.type)
         if dto.geometry:
-            statement = statement.where(geofunc.ST_Covers(
+            statement = statement.where(geofunc.ST_Intersects(
                 geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
                 nodes.c.point
             ))

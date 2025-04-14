@@ -16,7 +16,7 @@ class CreateEdgeDTO(BaseModel):
     graph: int = Field(description="graph id")
     level: EdgeLevelEnum = Field(examples=[EdgeLevelEnum.NONE, EdgeLevelEnum.REGIONAL], description="road level of edge")
     speed: int = Field(description="max speed of edge")
-    route: Optional[str] = Field(description="route name", default=None)
+    route: Optional[str] = Field(description="route name", default='')
     properties: dict = Field(default={}, description="optional, additional properties")
     geometry: Geometry | None = Field(default=None)
 

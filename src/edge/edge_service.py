@@ -77,6 +77,7 @@ class EdgeService:
             edges.c.weight_type,
             edges.c.level,
             edges.c.speed,
+            edges.c.route,
             edges.c.properties,
             cast(geofunc.ST_AsGeoJSON(edges.c.geometry), JSONB).label("geometry"),
             edges.c.created_at,
@@ -103,8 +104,7 @@ class EdgeService:
         """
         
         logger.info("Starting bulk edge upload")
-        
-        df_edges.drop("graph", axis="columns", inplace=True)
+
         df_edges["geometry"] = df_edges["geometry"].apply(lambda x: "SRID=4326; " + str(x.as_shapely_geometry()))
         df_edges["type"] = df_edges["type"].apply(lambda x: x.value)
         df_edges["weight_type"] = df_edges["weight_type"].apply(lambda x: x.value)
@@ -154,9 +154,12 @@ class EdgeService:
                         (df_edges["geometry"] == "SRID=4326; " + recovered_geometry) &
                         (df_edges["route"] == values[4])
                         ].iloc[0].name)
-        df_edges.loc[found, "new_id"] = await self.select_one_by_unique_critique(
-            int(values[0]), int(values[1]), values[2], recovered_geometry, values[4]
-        )
+        try:
+            df_edges.loc[found, "new_id"] = await self.select_one_by_unique_critique(
+                int(values[0]), int(values[1]), values[2], recovered_geometry, values[4]
+            )
+        except HTTPException as e:
+            df_edges = df_edges.drop(index=found)
         df = df.drop(index=found)
         
         return df_edges, df
@@ -180,6 +183,7 @@ class EdgeService:
                 edges.c.weight_type,
                 edges.c.level,
                 edges.c.speed,
+                edges.c.route,
                 edges.c.properties,
                 cast(geofunc.ST_AsGeoJSON(edges.c.geometry), JSONB).label("geometry"),
                 edges.c.created_at,

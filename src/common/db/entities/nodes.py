@@ -28,7 +28,7 @@ nodes = Table(
     Column("id", Integer, primary_key=True, server_default=nodes_id_seq.next_value()),
     Column("type", Enum(NodeTypeEnum), nullable=False, default=NodeTypeEnum.DRIVE),
     Column("properties", JSONB(astext_type=Text()), nullable=False, server_default=text("'{}'::jsonb")),
-    Column("route", String(50), nullable=True, default=None),
+    Column("route", String(200), nullable=False, default=''),
     Column(
         "point",
         geoalchemy2.types.Geometry(

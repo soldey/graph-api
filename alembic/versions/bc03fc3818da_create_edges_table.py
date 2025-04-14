@@ -37,7 +37,7 @@ def upgrade() -> None:
         Column("weight_type", Enum(WeightTypeEnum, name="weighttypeenum"), nullable=False, default=WeightTypeEnum.DISTANCE),
         Column("level", Enum(EdgeLevelEnum, name="edgelevelenum"), nullable=False, default=EdgeLevelEnum.NONE),
         Column("speed", Integer, nullable=False),
-        Column("route", String(50), nullable=True, default=None),
+        Column("route", String(200), nullable=False, default=''),
         Column("properties", JSONB(astext_type=Text()), nullable=False, server_default=text("'{}'::jsonb")),
         Column(
             "geometry",

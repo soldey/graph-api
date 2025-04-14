@@ -4,7 +4,7 @@ from pathlib import Path
 
 import networkx as nx
 import pandas as pd
-from asyncpg import UniqueViolationError
+from asyncpg import UniqueViolationError, ProgramLimitExceededError
 from fastapi import HTTPException
 from geopandas import GeoDataFrame
 from loguru import logger
@@ -26,6 +26,7 @@ from src.graph.dto.select_graphs_dto import SelectGraphsDTO
 from src.graph.graph_edge_entity import GraphEdgeEntity
 from src.graph.graph_entity import GraphEntity
 from src.node.dto.create_node_dto import CreateNodeDTO
+from src.node.dto.select_nodes_dto import SelectNodesDTO
 from src.node.node_entity import NodeEntity
 from src.node.node_service import NodeService
 
@@ -160,12 +161,13 @@ class GraphService:
     
     async def bulk_graph_upload(self, nodes: list[CreateNodeDTO], edges: list[CreateEdgeDTO], graph: int):
         logger.info("Starting bulk graph upload")
-        
+
         df_nodes = DataFrame(data=[dto.__dict__ for dto in nodes])
         df_nodes = await self.node_service.create_many(df_nodes)
         new_nodes_id = df_nodes["new_id"].to_dict()
-        
+
         df_edges = DataFrame(data=[dto.__dict__ for dto in edges])
+        df_edges.drop("graph", axis="columns", inplace=True)
         df_edges["u"] = df_edges["u"].map(new_nodes_id)
         df_edges["v"] = df_edges["v"].map(new_nodes_id)
         df_edges = await self.edge_service.create_many(df_edges)
@@ -303,11 +305,11 @@ class GraphService:
             graph=None if graph is None else graph.id,
             geometry=dto.geometry,
         ))
-        nodes_set = set()
-        for edge in edges:
-            nodes_set.add(await self.node_service.select_one(edge.u))
-            nodes_set.add(await self.node_service.select_one(edge.v))
-        return graph, edges, list(nodes_set)
+        nodes = await self.node_service.select_many(SelectNodesDTO(
+            graph=None if graph is None else graph.id,
+            geometry=dto.geometry,
+        ))
+        return graph, edges, nodes
 
     async def select_one(self, id_or_name: str) -> GraphEntity:
         """Select one graph.

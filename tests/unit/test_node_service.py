@@ -19,7 +19,7 @@ create_node_dto = CreateNodeDTO(
         type='Point',
         coordinates=[30.307160601007837, 59.94951849764507]
     ),
-    route="route 4"
+    route=''
 )
 create_node_dto1 = CreateNodeDTO(
     type=NodeTypeEnum.DRIVE,
@@ -27,7 +27,7 @@ create_node_dto1 = CreateNodeDTO(
         type='Point',
         coordinates=[30.32309539596909, 59.95291638534613]
     ),
-    route="route 5"
+    route=''
 )
 
 
@@ -38,7 +38,7 @@ async def test_creating_node(node_service, create_nodes):
     expected = NodeEntity(
         0, NodeTypeEnum.DRIVE,
         geom.shape({"type": create_node_dto.point.type, "coordinates": create_node_dto.point.coordinates}),
-        {},
+        '', {},
         datetime.now(), datetime.now()
     )
     assert compare_entities(node, expected)
@@ -84,10 +84,6 @@ async def test_creating_nodes_with_equal_geometry(node_service, create_nodes):
 @pytest.mark.asyncio
 async def test_test(node_service):
     data = [create_node_dto, create_node_dto1]
-    cnt = 4
-    for dto in data:
-        dto.route = f"route {cnt}"
-        cnt += 2
     df_nodes = DataFrame(data=[dto.__dict__ for dto in data])
     res = await node_service.create_many(df_nodes)
     print(res)

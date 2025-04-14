@@ -85,6 +85,7 @@ async def test_creating_edge(services, create_nodes):
         create_edge_dto.weight_type,
         create_edge_dto.level,
         create_edge_dto.speed,
+        create_edge_dto.route,
         create_edge_dto.properties,
         geom.shape({"type": create_edge_dto.geometry.type, "coordinates": create_edge_dto.geometry.coordinates}),
         datetime.now(),
