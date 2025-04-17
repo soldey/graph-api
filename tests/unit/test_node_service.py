@@ -1,9 +1,8 @@
 from datetime import datetime
 
 import pytest
-from fastapi import HTTPException
 import shapely.geometry as geom
-from pandas import DataFrame
+from fastapi import HTTPException
 from shapely import equals_exact
 
 from src.common.db.entities.nodes import NodeTypeEnum
@@ -11,7 +10,6 @@ from src.common.geometries import Geometry
 from src.node.dto.create_node_dto import CreateNodeDTO
 from src.node.dto.select_nodes_dto import SelectNodesDTO
 from src.node.node_entity import NodeEntity
-
 
 create_node_dto = CreateNodeDTO(
     type=NodeTypeEnum.DRIVE,
@@ -79,15 +77,6 @@ async def test_creating_nodes_with_equal_geometry(node_service, create_nodes):
     node, _ = create_nodes
     node1 = await node_service.create(create_node_dto)
     assert compare_entities(node, node1)
-
-
-@pytest.mark.asyncio
-async def test_test(node_service):
-    data = [create_node_dto, create_node_dto1]
-    df_nodes = DataFrame(data=[dto.__dict__ for dto in data])
-    res = await node_service.create_many(df_nodes)
-    print(res)
-    assert len(res) == 2
 
 
 def compare_entities(node1: NodeEntity, node2: NodeEntity, ignore: list[str] = ["id", "created_at", "updated_at"]):

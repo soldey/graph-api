@@ -1,27 +1,33 @@
 import hashlib
 from io import BytesIO
 from pathlib import Path
+from typing import Optional
 
 import networkx as nx
 import pandas as pd
-from asyncpg import UniqueViolationError, ProgramLimitExceededError
+from asyncpg import UniqueViolationError
 from fastapi import HTTPException
+from geoalchemy2 import functions as geofunc
 from geopandas import GeoDataFrame
 from loguru import logger
 from matplotlib.pyplot import savefig, clf
 from networkx import MultiDiGraph
 from pandas import DataFrame, MultiIndex, notna
-from sqlalchemy import insert, select, delete
+from shapely.geometry.base import BaseGeometry
+from shapely.geometry.geo import box
+from sqlalchemy import insert, select, delete, text, or_
 
-from src.graph.dto.select_graph_with_edges_dto import SelectGraphWithEdgesDTO
 from src.common.db.database import DatabaseModule
+from src.common.db.entities.edges import edges
 from src.common.db.entities.graph_edges import graph_edges
 from src.common.db.entities.graphs import graphs
+from src.common.db.entities.nodes import nodes
 from src.edge.dto.create_edge_dto import CreateEdgeDTO
 from src.edge.dto.select_edges_dto import SelectEdgesDTO
 from src.edge.edge_entity import EdgeEntity
 from src.edge.edge_service import EdgeService
 from src.graph.dto.create_graph_dto import CreateGraphDTO
+from src.graph.dto.select_graph_with_edges_dto import SelectGraphWithEdgesDTO
 from src.graph.dto.select_graphs_dto import SelectGraphsDTO
 from src.graph.graph_edge_entity import GraphEdgeEntity
 from src.graph.graph_entity import GraphEntity
@@ -118,11 +124,23 @@ class GraphService:
         logger.info("Relationship committed")
         return GraphEdgeEntity(**result)
     
-    async def add_edges(self, dtos: list[CreateEdgeDTO]):
-        return [await self.add_edge(dto) for dto in dtos]
-    
-    async def create_many(self, graph: int, edges: list[int]):
+    async def create_many(self, graph: int, edges: list[int], geometry: Optional[BaseGeometry] = None) -> DataFrame:
+        """Bulk upload of relationships.
+        
+        Args:
+            graph (int): graph id.
+            edges (list[int]): list of uploaded edge ids.
+            geometry (Optional[BaseGeometry]): geometry to look relationships in.
+        
+        Returns:
+            DataFrame: filtered relationship DataFrame with "new_id" column.
+        """
+        
         df = DataFrame.from_dict(data={"graph": graph, "edge": edges})
+        
+        if geometry:
+            existing_edges_ids = await self.select_many_edges_by_graph_and_geometry(graph, geometry)
+            df = df[~df["edge"].isin(existing_edges_ids)]
         
         df_hash = hashlib.sha256(df['edge'].values).hexdigest()
         csv_name = f"{df_hash[:12]}.csv"
@@ -132,7 +150,7 @@ class GraphService:
         while not done:
             df.to_csv(Path().absolute() / csv_name, sep="&", header=False, lineterminator="\n", index=False)
             try:
-                res = [record["id"] for record in await self.database.execute_copy("graph_edges", csv_name, columns)]
+                res = [record["id"] for record in (await self.database.execute_copy("graph_edges", csv_name, columns))]
                 logger.success(f"Successfully added {len(res)} relationships")
                 
                 done = True
@@ -145,8 +163,15 @@ class GraphService:
         return df
     
     async def _conflict_resolver(self, e: Exception, df: DataFrame) -> DataFrame:
-        """
-        TODO: conflict resolver for existing nodes, more research towards returned geometry type (hash?)
+        """Conflict resolver for bulk upload.
+        
+        Args:
+            e (Exception): an object of UniqueViolationError from asyncpg, containing detail of duplicated entity.
+            df (DataFrame): entry data for relationships in DataFrame to find duplicated entity.
+            df (DataFrame): mutable entry data for relationships to drop duplicated entity from.
+        
+        Returns:
+            DataFrame: changed relationship DataFrame.
         """
         
         filtered_error = (e.detail[5:-17]).split(")=(")
@@ -159,21 +184,37 @@ class GraphService:
         
         return df
     
-    async def bulk_graph_upload(self, nodes: list[CreateNodeDTO], edges: list[CreateEdgeDTO], graph: int):
+    async def bulk_graph_upload(self, nodes: list[CreateNodeDTO], edges: list[CreateEdgeDTO], graph: int) -> list[int]:
+        """Bulk graph upload.
+        
+        Args:
+            nodes (list[CreateNodeDTO]): entry data for nodes as DTO objects.
+            edges (list[CreateEdgeDTO]): entry data for edges as DTO objects.
+            graph (int): graph id to upload edges into.
+        
+        Returns:
+            list[int]: list of uploaded relationship ids.
+        """
+        
         logger.info("Starting bulk graph upload")
-
-        df_nodes = DataFrame(data=[dto.__dict__ for dto in nodes])
-        df_nodes = await self.node_service.create_many(df_nodes)
-        new_nodes_id = df_nodes["new_id"].to_dict()
-
+        
         df_edges = DataFrame(data=[dto.__dict__ for dto in edges])
         df_edges.drop("graph", axis="columns", inplace=True)
+        
+        df_edges["geometry"] = df_edges["geometry"].apply(lambda x: x.as_shapely_geometry())
+        gdf_edges = GeoDataFrame(df_edges, geometry="geometry", crs=4326)
+        total_geometry = box(*gdf_edges.total_bounds)
+
+        df_nodes = DataFrame(data=[dto.__dict__ for dto in nodes])
+        df_nodes = await self.node_service.create_many(df_nodes, total_geometry)
+        new_nodes_id = df_nodes["new_id"].to_dict()
+
         df_edges["u"] = df_edges["u"].map(new_nodes_id)
         df_edges["v"] = df_edges["v"].map(new_nodes_id)
-        df_edges = await self.edge_service.create_many(df_edges)
+        df_edges = await self.edge_service.create_many(df_edges, total_geometry)
 
-        ships = await self.create_many(graph, df_edges["new_id"])
-        return ships
+        ships = await self.create_many(graph, df_edges["new_id"], total_geometry)
+        return ships["new_id"]
     
     async def build_nx_graph(self, dto: SelectGraphWithEdgesDTO) -> MultiDiGraph:
         """Build multidimensional graph.
@@ -239,6 +280,13 @@ class GraphService:
         return G
     
     async def visualize_graph(self, dto: SelectGraphWithEdgesDTO) -> BytesIO:
+        """Visualization method for graph.
+        
+        Args:
+            dto (SelectGraphWithEdgesDTO): DTO object.
+        Returns:
+            BytesIO: bytes for png.
+        """
         
         logger.info("Started visualizing graph")
         graph, edges, nodes = await self.select_one_with_edges(dto)
@@ -264,6 +312,31 @@ class GraphService:
         
         logger.info("Visualization finished")
         return bytesio
+    
+    async def select_many_edges_by_graph_and_geometry(self, graph: int, geometry: BaseGeometry) -> list[int]:
+        """Select multiple edges through relationships by graph and geometry.
+        
+        Args:
+            graph (int): graph id.
+            geometry (BaseGeometry): geometry to find existing edges in.
+        Returns:
+            list[int]: list of edge ids.
+        """
+        
+        statement = (
+            select(graph_edges.c.edge)
+            .select_from(graph_edges)
+            .join(edges, edges.c.id == graph_edges.c.edge, isouter=True)
+            .join(nodes, or_(nodes.c.id == edges.c.u, nodes.c.id == edges.c.v))
+            .where(geofunc.ST_Intersects(
+                geofunc.ST_GeomFromText(str(geometry), text("4326")),
+                nodes.c.point
+            ))
+            .where(graph_edges.c.graph == graph)
+        )
+        
+        results = (await self.database.execute_query(statement)).mappings().all()
+        return [result["edge"] for result in results]
     
     async def select_one_relationship(self, graph_id: int, edge_id: int) -> GraphEdgeEntity | None:
         """Select one graph-edge relationship.

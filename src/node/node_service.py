@@ -1,23 +1,24 @@
 import hashlib
 from pathlib import Path
 
+import shapely.geometry as geom
 from asyncpg import UniqueViolationError
 from fastapi import HTTPException
+from geoalchemy2 import functions as geofunc
 from iduconfig import Config
 from loguru import logger
 from pandas import DataFrame
-from pandas.core.util.hashing import hash_pandas_object
 from shapely import from_wkb
+from shapely.geometry.base import BaseGeometry
 from sqlalchemy import insert, text, cast, select, or_, delete, distinct
-from geoalchemy2 import functions as geofunc
 from sqlalchemy.dialects.postgresql import JSONB
-import shapely.geometry as geom
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.common.db.database import DatabaseModule
 from src.common.db.entities.edges import edges
 from src.common.db.entities.graph_edges import graph_edges
 from src.common.db.entities.nodes import nodes
+from src.common.geometries import Geometry
 from src.node.dto.create_node_dto import CreateNodeDTO
 from src.node.dto.select_nodes_dto import SelectNodesDTO
 from src.node.node_entity import NodeEntity
@@ -70,18 +71,61 @@ class NodeService:
         logger.info("Node committed")
         return NodeEntity(**result)
     
-    async def create_many(self, df_nodes: DataFrame) -> DataFrame:
+    async def create_many(self, df_nodes: DataFrame, geometry: BaseGeometry) -> DataFrame:
+        """Bulk node creation.
+        
+        Args:
+            df_nodes (DataFrame): entry data for nodes in DataFrame.
+            geometry (BaseGeometry): any geometry to look existing nodes in.
+        
+        Returns:
+            DataFrame: nodes DataFrame with "new_id" column.
+        """
+        
+        logger.info("Checking for existing nodes")
+        
+        df_nodes["point"] = df_nodes["point"].apply(lambda x: str(x.as_shapely_geometry()))
+        df_nodes["type"] = df_nodes["type"].apply(lambda x: x.value)
+        
+        existing_nodes = await self.select_many(SelectNodesDTO(geometry=Geometry.from_shapely_geometry(geometry)))
+        if len(existing_nodes) != 0:
+            
+            existing_nodes_df = DataFrame(data=[node.__dict__ for node in existing_nodes])
+            existing_nodes_df["point"] = existing_nodes_df["point"].apply(lambda x: str(x))
+            existing_nodes_df["type"] = existing_nodes_df["type"].apply(lambda x: x.value)
+            
+            df_nodes = df_nodes.merge(
+                existing_nodes_df,
+                on=["type", "point", "route"],
+                how="left"
+            )
+            df_nodes["new_id"] = df_nodes["id"]
+            df_nodes["properties"] = df_nodes["properties_x"]
+            df_nodes.drop(
+                columns=[
+                    "created_at",
+                    "updated_at",
+                    "properties_x",
+                    "properties_y",
+                    "id"
+                ],
+                inplace=True
+            )
+            df_nodes["point"] = df_nodes["point"].apply(lambda x: "SRID=4326; " + str(x))
+            df = df_nodes.copy()
+            df = df[df_nodes["new_id"].isna()]
+            df.drop(columns=["new_id"], inplace=True)
+        else:
+            df_nodes["point"] = df_nodes["point"].apply(lambda x: "SRID=4326; " + str(x))
+            df = df_nodes.copy()
+            df.drop(columns=["new_id"], inplace=True)
+            
         
         logger.info("Starting bulk nodes upload")
-        
-        df_nodes["point"] = df_nodes["point"].apply(lambda x: "SRID=4326; " + str(x.as_shapely_geometry()))
-        df_nodes["type"] = df_nodes["type"].apply(lambda x: x.value)
-        df = df_nodes.copy()
         
         df_hash = hashlib.sha256(df['point'].values).hexdigest()
         csv_name = f"nodes_{df_hash[:12]}.csv"
         
-        df_nodes["new_id"] = [None] * len(df_nodes)
         
         columns = df.columns.to_list()
         done = False
@@ -91,22 +135,27 @@ class NodeService:
                 res = [record["id"] for record in await self.database.execute_copy("nodes", str(self.csv_dir / csv_name), columns)]
                 logger.success(f"Successfully added {len(res)} nodes")
                 
-                j = 0
-                for i in range(len(df_nodes)):
-                    if df_nodes["new_id"][i] is None:
-                        df_nodes.loc[i, "new_id"] = res[j]
-                        j += 1
+                mask = df_nodes["new_id"].isna()
+                df_nodes.loc[mask, "new_id"] = res[:mask.sum()]
                 
                 done = True
             except UniqueViolationError as e:
                 logger.error(e)
                 df_nodes, df = await self._conflict_resolver(e, df_nodes, df)
         (self.csv_dir / csv_name).unlink()
+        df_nodes["new_id"] = df_nodes["new_id"].astype(int)
         return df_nodes
     
     async def _conflict_resolver(self, e: Exception, df_nodes: DataFrame, df: DataFrame) -> tuple[DataFrame, DataFrame]:
-        """
-        TODO: conflict resolver for existing nodes, more research towards returned geometry type (hash?)
+        """Conflict resolver for bulk upload.
+        
+        Args:
+            e (Exception): an object of UniqueViolationError from asyncpg, containing detail of duplicated entity.
+            df_nodes (DataFrame): entry data for nodes in DataFrame to find duplicated entity.
+            df (DataFrame): mutable entry data for nodes to drop duplicated entity from.
+        
+        Returns:
+            tuple[DataFrame, DataFrame]: df_nodes, df respectively.
         """
         
         filtered_error = (e.detail[5:-17]).split(")=(")
@@ -154,6 +203,19 @@ class NodeService:
         return NodeEntity(**result)
     
     async def select_one_by_unique_critique(self, _type: str, point: str, route: str) -> int:
+        """Select one node by unique critique (type, point, route).
+        
+        Args:
+            _type (str): type of node.
+            point (str): string representation of point geometry.
+            route (str): route if node is transport node.
+        
+        Returns:
+            int: node id.
+        Raises:
+            HTTPException(404): if node wasn't found.
+        """
+        
         statement = (
             select(nodes.c.id)
             .select_from(nodes)
@@ -167,6 +229,15 @@ class NodeService:
         return result["id"]
     
     async def select_one_by_geometry(self, geometry: geom.Point) -> tuple[int | None, AsyncSession]:
+        """Select one node by geometry.
+        
+        Args:
+            geometry (Point): Point geometry.
+        
+        Returns:
+            tuple[Optional[int], AsyncSession]: node id and session to commit respectively.
+        """
+        
         statement = (
             select(
                 nodes.c.id
@@ -220,6 +291,11 @@ class NodeService:
         return [NodeEntity(**result) for result in results]
     
     async def delete_node(self, node_id: int):
+        """Delete existing node by id.
+        
+        Args:
+            node_id (int): node id.
+        """
 
         statement = (
             delete(nodes).where(nodes.c.id == node_id)

@@ -46,7 +46,7 @@ async def add_edge(dto: Annotated[CreateEdgeDTO, Body(embed=True)]):
     return await GraphEdgeDTO.from_service(await graph_service.add_edge(dto))
 
 
-@graph_router.post("/add-edge-bulk", response_model=list[GraphEdgeDTO])
+@graph_router.post("/add-edge-bulk", response_model=list)
 async def add_edge_bulk(
         dto: Annotated[CreateEdgesDTO, Body(embed=True)],
         graph: Annotated[int, Query()]

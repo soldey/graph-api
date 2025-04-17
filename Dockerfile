@@ -19,7 +19,8 @@ EXPOSE 8000
 
 # Run the application.
 RUN echo "cd /app" > /app/entrypoint.sh && \
-    echo "gunicorn src.app:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind=0.0.0.0:8000 --timeout 0" >> /app/entrypoint.sh
+    echo "python -m alembic upgrade head" >> /app/entrypoint.sh && \
+    echo "gunicorn src.app:app --workers 3 --worker-class uvicorn.workers.UvicornWorker --bind=0.0.0.0:8000 --timeout 0" >> /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh
 

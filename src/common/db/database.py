@@ -62,6 +62,16 @@ class DatabaseModule:
         return result, session
     
     async def execute_copy(self, table_name: str, csv_name: str, columns: list[str]) -> list[Record]:
+        """Driver specific method for executing COPY FROM method.
+        
+        Args:
+            table_name (str): table name.
+            csv_name (str): csv filename.
+            columns (list[str]): columns to upload into.
+        Returns:
+            list[Record]: list of Record ids.
+        """
+        
         async with self._session_maker() as session:
             session: AsyncSession = session
             conn: Connection = (await (await session.connection()).get_raw_connection()).driver_connection

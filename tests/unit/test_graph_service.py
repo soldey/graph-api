@@ -1,16 +1,14 @@
 from datetime import datetime
-from enum import Enum
 
 import pytest
-import PIL.Image as Image
 from fastapi import HTTPException
 
-from src.graph.dto.select_graph_with_edges_dto import SelectGraphWithEdgesDTO
 from src.common.db.entities.edges import EdgeTypeEnum, WeightTypeEnum, EdgeLevelEnum
 from src.common.db.entities.graphs import GraphTypeEnum
 from src.common.geometries import Geometry
 from src.edge.dto.create_edge_dto import CreateEdgeDTO
 from src.graph.dto.create_graph_dto import CreateGraphDTO
+from src.graph.dto.select_graph_with_edges_dto import SelectGraphWithEdgesDTO
 from src.graph.dto.select_graphs_dto import SelectGraphsDTO
 from src.graph.graph_entity import GraphEntity
 from unit.test_edge_service import create_edge_dto, create_edge_dto2
@@ -266,7 +264,7 @@ async def test_getting_graph_with_edges_by_geometry(graph_service, create_graph,
         dto
     )
     assert graph1 is None
-    assert len(edges) == 2
+    assert len(edges) == 4
     assert len(nodes) == 2
 
 
@@ -289,7 +287,7 @@ async def test_building_nx_graph_by_geometry(graph_service, create_graph, create
         SelectGraphWithEdgesDTO(geometry=area_geometry)
     )
     
-    assert len(g.edges.items()) == 2
+    assert len(g.edges.items()) == 4
     assert len(g.nodes.items()) == 2
 
 
