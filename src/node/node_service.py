@@ -83,7 +83,8 @@ class NodeService:
         """
         
         logger.info("Checking for existing nodes")
-        
+
+        df_nodes["new_id"] = [None] * len(df_nodes)
         df_nodes["point"] = df_nodes["point"].apply(lambda x: str(x.as_shapely_geometry()))
         df_nodes["type"] = df_nodes["type"].apply(lambda x: x.value)
         
