@@ -15,7 +15,7 @@ create_node_dto = CreateNodeDTO(
     type=NodeTypeEnum.DRIVE,
     point=Geometry(
         type='Point',
-        coordinates=[30.307160601007837, 59.94951849764507]
+        coordinates=[30.307160601, 59.949518498]
     ),
     route=''
 )
@@ -23,7 +23,7 @@ create_node_dto1 = CreateNodeDTO(
     type=NodeTypeEnum.DRIVE,
     point=Geometry(
         type='Point',
-        coordinates=[30.32309539596909, 59.95291638534613]
+        coordinates=[30.323095396, 59.952916385]
     ),
     route=''
 )

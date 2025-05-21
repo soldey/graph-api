@@ -1,12 +1,14 @@
 import hashlib
 from pathlib import Path
 
+import numpy
 import shapely.geometry as geom
 from asyncpg import UniqueViolationError
 from fastapi import HTTPException
 from geoalchemy2 import functions as geofunc
 from iduconfig import Config
 from loguru import logger
+from numpy.f2py.crackfortran import include_paths
 from pandas import DataFrame
 from shapely import from_wkb
 from shapely.geometry.base import BaseGeometry
@@ -138,6 +140,7 @@ class NodeService:
                 
                 mask = df_nodes["new_id"].isna()
                 df_nodes.loc[mask, "new_id"] = res[:mask.sum()]
+                # await self.verify_correctness(df_nodes)
                 
                 done = True
             except UniqueViolationError as e:
@@ -173,6 +176,21 @@ class NodeService:
         df = df.drop(index=found)
         
         return df_nodes, df
+    
+    async def verify_correctness(self, df_nodes: DataFrame):
+        ids = df_nodes["new_id"].astype(int).tolist()
+        df_nodes["id"] = df_nodes["new_id"]
+        df_nodes.drop(columns=["new_id"], inplace=True)
+        results = []
+        for _id in ids:
+            result = await self.select_one(_id)
+            results.append(result)
+        df_from_db = DataFrame(data=[result.__dict__ for result in results])
+        
+        df_nodes = df_nodes.merge(df_from_db, on=["id"])
+        df_nodes["point_y"] = df_nodes["point_y"].apply(lambda x: "SRID=4326; " + str(x))
+        df_nodes["equal"] = numpy.equal(df_nodes["point_x"], df_nodes["point_y"])
+        return df_nodes
 
     async def select_one(self, _id: int) -> NodeEntity:
         """Select one node by id.

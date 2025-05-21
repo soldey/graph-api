@@ -1,3 +1,4 @@
+import json
 import pickle
 from typing import Annotated
 
@@ -63,8 +64,8 @@ async def build_nx_graph(dto: Annotated[SelectGraphWithEdgesDTO, Depends(SelectG
     graph_attrs, edges, nodes = await graph_service.build_nx_graph(dto)
     return {
         "attributes": graph_attrs,
-        "edges": edges.to_json(),
-        "nodes": nodes.to_json()
+        "edges": json.loads(edges.to_json()),
+        "nodes": json.loads(nodes.to_json())
     }
 
 

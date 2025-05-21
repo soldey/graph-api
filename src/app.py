@@ -22,7 +22,7 @@ async def logging_dependency(request: Request):
 
 app = FastAPI(
     root_path="/api/v1",
-    version="1.1.0",
+    version="1.1.1",
     lifespan=lifespan
 )
 

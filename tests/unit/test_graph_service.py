@@ -49,6 +49,8 @@ area_geometry = Geometry(
     ]
 )
 
+# TODO: CHANGE GRAPH BUILDING LOGIC
+
 
 @pytest.mark.asyncio
 async def test_creating_graph(graph_service, create_graph):

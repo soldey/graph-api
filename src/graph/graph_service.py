@@ -199,22 +199,28 @@ class GraphService:
         logger.info("Starting bulk graph upload")
         
         df_edges = DataFrame(data=[dto.__dict__ for dto in edges])
-        df_edges.drop("graph", axis="columns", inplace=True)
-        
-        df_edges["geometry"] = df_edges["geometry"].apply(lambda x: x.as_shapely_geometry())
-        gdf_edges = GeoDataFrame(df_edges, geometry="geometry", crs=4326)
-        total_geometry = box(*gdf_edges.total_bounds)
+        if not df_edges.empty:
+            df_edges.drop("graph", axis="columns", inplace=True)
+            df_edges["geometry"] = df_edges["geometry"].apply(lambda x: x.as_shapely_geometry())
+            gdf_edges = GeoDataFrame(df_edges, geometry="geometry", crs=4326)
+            total_geometry = box(*gdf_edges.total_bounds)
 
         df_nodes = DataFrame(data=[dto.__dict__ for dto in nodes])
-        df_nodes = await self.node_service.create_many(df_nodes, total_geometry)
+        if not df_edges.empty:
+            df_nodes = await self.node_service.create_many(df_nodes, total_geometry)
+        else:
+            df_nodes = await self.node_service.create_many(df_nodes, None)
         new_nodes_id = df_nodes["new_id"].astype(int).to_dict()
-
-        df_edges["u"] = df_edges["u"].map(new_nodes_id)
-        df_edges["v"] = df_edges["v"].map(new_nodes_id)
-        df_edges = await self.edge_service.create_many(df_edges, total_geometry)
-
-        ships = await self.create_many(graph, df_edges["new_id"], total_geometry)
-        return ships["new_id"]
+        
+        if not df_edges.empty:
+            df_edges["u"] = df_edges["u"].map(new_nodes_id)
+            df_edges["v"] = df_edges["v"].map(new_nodes_id)
+            df_edges = await self.edge_service.create_many(df_edges, total_geometry)
+    
+            ships = await self.create_many(graph, df_edges["new_id"], total_geometry)
+            return ships["new_id"]
+        else:
+            return []
     
     async def build_nx_graph(self, dto: SelectGraphWithEdgesDTO) -> tuple[dict, GeoDataFrame, GeoDataFrame]:
         """Build multidimensional graph.
@@ -234,10 +240,6 @@ class GraphService:
         gdf_nodes = GeoDataFrame(dict_nodes, crs="EPSG:4326")
         gdf_nodes.set_index("id", drop=True, inplace=True)
         
-        # if gdf_nodes.active_geometry_name is None:
-        #     df_nodes = DataFrame(gdf_nodes)
-        # else:
-        #     df_nodes = gdf_nodes.drop(columns=gdf_nodes.active_geometry_name)
         logger.info("Combined nodes into gdf and df")
         
         dict_edges = {k: [dic.__dict__[k] for dic in edges] for k in edges[0].__dict__}
@@ -249,10 +251,7 @@ class GraphService:
             relationships[(edge.u, edge.v)] += 1
             keys.append(relationships[(edge.u, edge.v)])
         dict_edges["key"] = keys
-        # index = MultiIndex.from_tuples([(edges[i].u, edges[i].v, keys[i]) for i in range(len(edges))])
         gdf_edges = GeoDataFrame(dict_edges, crs="EPSG:4326").reset_index(drop=True)
-        # gdf_edges.index = index
-        # gdf_edges.drop(columns=["u", "v", "key"], inplace=True)
         logger.info("Combined edges into gdf")
         
         if graph is not None:
@@ -264,21 +263,6 @@ class GraphService:
             graph_attrs = {
                 "crs": str(gdf_edges.crs)
             }
-        # G = MultiDiGraph(**graph_attrs)
-        # logger.info("Built graph without attributes")
-        
-        # attr_names = gdf_edges.columns.tolist()
-        # дык тут уже gdf edges и gdf ndoes сформированы
-        # кроме ебаного ключа в эджах, который нужно добавить
-        # gdf_edges.index он же тут уже
-        # а блять реально
-        # for (u, v, k), attr_vals in zip(gdf_edges.index, gdf_edges.to_numpy()):
-        #     data_all = zip(attr_names, attr_vals)
-        #     data = {name: val for name, val in data_all if isinstance(val, list) or notna(val)}
-        #     G.add_edge({"u": u, "v": v, "key": k, **data})
-        #
-        # for col in df_nodes.columns:
-        #     nx.set_node_attributes(G, name=col, values=df_nodes[col].dropna())
         gdf_edges["type"] = gdf_edges["type"].apply(lambda x: x.value)
         gdf_edges["weight_type"] = gdf_edges["weight_type"].apply(lambda x: x.value)
         gdf_edges["level"] = gdf_edges["level"].apply(lambda x: x.value)
@@ -288,6 +272,7 @@ class GraphService:
 
         gdf_nodes["type"] = gdf_nodes["type"].apply(lambda x: x.value)
         gdf_nodes.drop(columns=["created_at", "updated_at"], inplace=True)
+        gdf_nodes.reset_index(names="node_id", inplace=True)
         logger.info("Finished building graph")
         return graph_attrs, gdf_edges, gdf_nodes
     
