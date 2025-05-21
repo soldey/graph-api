@@ -56,11 +56,16 @@ async def add_edge_bulk(
     return await graph_service.bulk_graph_upload(dto.nodes, dto.edges, graph)
 
 
-@graph_router.post("/build", response_class=PlainTextResponse)
+@graph_router.post("/build", response_model=dict)
 async def build_nx_graph(dto: Annotated[SelectGraphWithEdgesDTO, Depends(SelectGraphWithEdgesDTO)]):
     logger.info(f"Call - {_router_prefix}/build")
-    
-    return PlainTextResponse(content=pickle.dumps(await graph_service.build_nx_graph(dto)))
+
+    graph_attrs, edges, nodes = await graph_service.build_nx_graph(dto)
+    return {
+        "attributes": graph_attrs,
+        "edges": edges.to_json(),
+        "nodes": nodes.to_json()
+    }
 
 
 @graph_router.post("/visualize", response_class=Response)
