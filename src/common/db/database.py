@@ -86,6 +86,7 @@ class DatabaseModule:
                     f"""
                     SELECT id FROM {table_name}
                     WHERE xmin::text = (txid_current() % (2^32)::bigint)::text
+                    ORDER BY id ASC
                     """
                 )
                 await tr.commit()
