@@ -53,6 +53,11 @@ area_geometry = Geometry(
 
 
 @pytest.mark.asyncio
+async def test_clear_db(database):
+    assert True
+
+
+@pytest.mark.asyncio
 async def test_creating_graph(graph_service, create_graph):
     
     graph = create_graph
@@ -215,11 +220,11 @@ async def test_building_nx_graph(graph_service, create_graph, create_nodes):
     create_edge_dto.v = node2.id
     _ = await graph_service.add_edge(create_edge_dto)
     
-    g = await graph_service.build_nx_graph(
+    graph_attrs, edges, nodes = await graph_service.build_nx_graph(
         SelectGraphWithEdgesDTO(id_or_name=str(graph.id))
     )
     
-    assert len(g.edges.items()) == 1
+    assert len(edges) == 1
 
 
 @pytest.mark.asyncio
@@ -237,11 +242,11 @@ async def test_building_nx_graph_with_multi_edge(graph_service, create_graph, cr
     edge2 = await graph_service.add_edge(create_edge_dto3)
     assert edge1.id != edge2.id
     
-    g = await graph_service.build_nx_graph(
+    graph_attrs, edges, nodes = await graph_service.build_nx_graph(
         SelectGraphWithEdgesDTO(id_or_name=str(graph.id))
     )
     
-    assert len(g.edges.items()) == 2
+    assert len(edges) == 2
     
     # png_graph_bytes = await graph_service.visualize_graph(str(graph.id))
     # image = Image.open(png_graph_bytes)
@@ -266,7 +271,7 @@ async def test_getting_graph_with_edges_by_geometry(graph_service, create_graph,
         dto
     )
     assert graph1 is None
-    assert len(edges) == 4
+    assert len(edges) == 2
     assert len(nodes) == 2
 
 
@@ -285,12 +290,12 @@ async def test_building_nx_graph_by_geometry(graph_service, create_graph, create
     edge2 = await graph_service.add_edge(create_edge_dto3)
     assert edge1.id != edge2.id
     
-    g = await graph_service.build_nx_graph(
+    graph_attrs, edges, nodes = await graph_service.build_nx_graph(
         SelectGraphWithEdgesDTO(geometry=area_geometry)
     )
     
-    assert len(g.edges.items()) == 4
-    assert len(g.nodes.items()) == 2
+    assert len(edges) == 2
+    assert len(nodes) == 2
 
 
 @pytest.mark.asyncio

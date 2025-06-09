@@ -20,7 +20,7 @@ class EdgeDTO(BaseModel):
     level: EdgeLevelEnum = Field(description="level of edge", examples=[EdgeLevelEnum.REGIONAL, EdgeLevelEnum.LOCAL])
     speed: int = Field(description="max speed of edge")
     route: Optional[str] = Field(description="route name", default=None)
-    properties: dict = Field(description="additional parameters")
+    properties: dict = Field(description="additional parameters", default={})
     geometry: Geometry = Field(description="geometry of edge")
     created_at: datetime = Field(description="date of creation", default=datetime.now())
     updated_at: datetime = Field(description="date of last update", default=datetime.now())

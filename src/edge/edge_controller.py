@@ -22,8 +22,8 @@ async def create_edge(dto: Annotated[CreateEdgeDTO, Body(embed=True)]) -> EdgeDT
 @edge_router.post("/create-bulk", response_model=list[EdgeDTO])
 async def create_edge_bulk(dto: Annotated[CreateEdgesDTO, Body()]) -> list[EdgeDTO]:
     logger.info(f"Call - {_router_prefix}/create-bulk")
-    
-    return [await EdgeDTO.from_service(edge) for edge in (await edge_service.create_many(dto.dtos))]
+    result, uploaded = await edge_service.create_many(dto.dtos)
+    return [await EdgeDTO.from_service(edge) for edge in (result)]
 
 
 @edge_router.get("/select-one/{edge_id}", response_model=EdgeDTO)

@@ -11,9 +11,10 @@ from loguru import logger
 from pandas import DataFrame
 from shapely import from_wkb
 from shapely.geometry.base import BaseGeometry
-from sqlalchemy import insert, cast, text, select, delete, or_
+from sqlalchemy import insert, cast, text, select, delete, or_, distinct
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from src.common.db.database import DatabaseModule
 from src.common.db.entities.edges import edges
@@ -93,7 +94,7 @@ class EdgeService:
         logger.info("Edge committed")
         return EdgeEntity(**result)
     
-    async def create_many(self, df_edges: DataFrame, geometry: BaseGeometry) -> DataFrame:
+    async def create_many(self, df_edges: DataFrame, geometry: BaseGeometry) -> tuple[DataFrame, int]:
         """Bulk edge creation.
         
         Args:
@@ -111,20 +112,25 @@ class EdgeService:
         df_edges["route"] = df_edges["route"].fillna("")
         df_edges["geometry"] = df_edges["geometry"].apply(lambda x: str(x))
         
-        existing_edges = await self.select_many(SelectEdgesDTO(geometry=Geometry.from_shapely_geometry(geometry)))
-        if len(existing_edges) != 0:
-            existing_edges_df = DataFrame(data=[node.__dict__ for node in existing_edges])
+        logger.info("started selecting existing edges")
+        existing_edges_df = await self.select_many(SelectEdgesDTO(geometry=Geometry.from_shapely_geometry(geometry), return_type="dataframe"))
+        logger.info("finished selecting existing edges")
+        if len(existing_edges_df) != 0:
+            logger.info("started preparing data")
             existing_edges_df["type"] = existing_edges_df["type"].apply(lambda x: x.value)
             existing_edges_df["weight_type"] = existing_edges_df["weight_type"].apply(lambda x: x.value)
             existing_edges_df["level"] = existing_edges_df["level"].apply(lambda x: x.value)
             existing_edges_df["geometry"] = existing_edges_df["geometry"].apply(lambda x: str(x))
-            
+            logger.info("preparing data finished")
+            logger.info("started merging")
             df_edges = df_edges.merge(
                 existing_edges_df,
                 on=["u", "v", "type", "geometry", "route"],
                 how="left"
             )
+            logger.info("merging finished")
             df_edges["new_id"] = df_edges["id"]
+            logger.info("started correcting data")
             df_edges["properties"] = df_edges["properties_x"]
             df_edges["weight"] = df_edges["weight_x"]
             df_edges["weight_type"] = df_edges["weight_type_x"]
@@ -149,6 +155,7 @@ class EdgeService:
                 inplace=True
             )
             df_edges["geometry"] = df_edges["geometry"].apply(lambda x: "SRID=4326; " + str(x))
+            logger.info("correcting finished")
             df = df_edges.copy()
             df = df[df_edges["new_id"].isna()]
             df.drop(columns=["new_id"], inplace=True)
@@ -182,7 +189,7 @@ class EdgeService:
         
         (self.csv_dir / csv_name).unlink()
         df_edges["new_id"] = df_edges["new_id"].astype(int)
-        return df_edges
+        return df_edges, len(res)
     
     async def _conflict_resolver(self, e: Exception, df_edges: DataFrame, df: DataFrame) -> tuple[DataFrame, DataFrame]:
         """Conflict resolver for bulk upload.
@@ -250,6 +257,7 @@ class EdgeService:
         result = (await self.database.execute_query(statement)).mappings().one_or_none()
         if not result:
             raise HTTPException(404, "EDGE_NOT_FOUND")
+        print(Geometry(**result["geometry"]).as_shapely_geometry())
         return EdgeEntity(**result)
     
     async def select_one_by_geometry(self, geometry: geom.LineString) -> tuple[int | None, AsyncSession]:
@@ -307,7 +315,10 @@ class EdgeService:
             raise HTTPException(404, "NODE_NOT_FOUND")
         return result["id"]
     
-    async def select_many(self, dto: SelectEdgesDTO) -> list[EdgeEntity]:
+    async def select_many(
+            self,
+            dto: SelectEdgesDTO,
+    ) -> list[EdgeEntity] | DataFrame:
         """Select multiple edges by graph, type, level or geometry.
         
         Args:
@@ -318,7 +329,7 @@ class EdgeService:
         
         statement = (
             select(
-                edges.c.id,
+                distinct(edges.c.id),
                 edges.c.u,
                 edges.c.v,
                 edges.c.type,
@@ -345,16 +356,32 @@ class EdgeService:
         if dto.level:
             statement = statement.where(edges.c.level == dto.level)
         if dto.geometry:
+            node_u = aliased(nodes)
+            node_v = aliased(nodes)
             statement = (
-                statement.join(nodes, or_(nodes.c.id == edges.c.u, nodes.c.id == edges.c.v))
-                .where(geofunc.ST_Intersects(
+                statement.join(node_u, node_u.c.id == edges.c.u)
+                .join(node_v, node_v.c.id == edges.c.v)
+                .where(or_(
+                    geofunc.ST_Intersects(
                     geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
-                    nodes.c.point
+                        node_u.c.point
+                    ),
+                    geofunc.ST_Intersects(
+                        geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
+                        node_v.c.point
+                    )
                 ))
             )
-        
-        results = (await self.database.execute_query(statement)).mappings().all()
-        return [EdgeEntity(**result) for result in results]
+        statement = statement.limit(100)
+        logger.info("executing edge query")
+        query_results = (await self.database.execute_query(statement))
+        logger.info("finished executing query")
+        results = query_results.mappings().all()
+        logger.info(f"finished generating edge query, length - {len(results)}")
+        if dto.return_type == "entity":
+            return [EdgeEntity(**result) for result in results]
+        else:
+            return DataFrame(data=[edge for edge in results])
     
     async def delete_edge(self, edge_id: int):
         """Delete existing edge by id.

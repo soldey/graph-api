@@ -23,7 +23,7 @@ class DatabaseModule:
             database=config.get("DB_DATABASE"),
         )
         self.engine = create_async_engine(url, echo=True, poolclass=NullPool)
-        self._session_maker = sessionmaker(bind=self.engine, class_=AsyncSession, expire_on_commit=False)
+        self._session_maker = sessionmaker(bind=self.engine, class_=AsyncSession, expire_on_commit=True)
 
     async def execute_query(self, query: Executable) -> Result:
         """

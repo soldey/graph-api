@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 from io import BytesIO
 from pathlib import Path
@@ -13,9 +14,11 @@ from loguru import logger
 from matplotlib.pyplot import savefig, clf
 from networkx import MultiDiGraph
 from pandas import DataFrame, MultiIndex, notna
+from shapely.constructive import concave_hull
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.geo import box
 from sqlalchemy import insert, select, delete, text, or_
+from sqlalchemy.orm import aliased
 
 from src.common.db.database import DatabaseModule
 from src.common.db.entities.edges import edges
@@ -124,7 +127,7 @@ class GraphService:
         logger.info("Relationship committed")
         return GraphEdgeEntity(**result)
     
-    async def create_many(self, graph: int, edges: list[int], geometry: Optional[BaseGeometry] = None) -> DataFrame:
+    async def create_many(self, graph: int, edges: list[int], geometry: Optional[BaseGeometry] = None) -> tuple[DataFrame, int]:
         """Bulk upload of relationships.
         
         Args:
@@ -160,7 +163,7 @@ class GraphService:
                 logger.error(e)
         (Path().absolute() / csv_name).unlink()
         df["new_id"] = res
-        return df
+        return df, len(res)
     
     async def _conflict_resolver(self, e: Exception, df: DataFrame) -> DataFrame:
         """Conflict resolver for bulk upload.
@@ -184,7 +187,7 @@ class GraphService:
         
         return df
     
-    async def bulk_graph_upload(self, nodes: list[CreateNodeDTO], edges: list[CreateEdgeDTO], graph: int) -> list[int]:
+    async def bulk_graph_upload(self, nodes: list[CreateNodeDTO], edges: list[CreateEdgeDTO], graph: int) -> dict:
         """Bulk graph upload.
         
         Args:
@@ -199,28 +202,63 @@ class GraphService:
         logger.info("Starting bulk graph upload")
         
         df_edges = DataFrame(data=[dto.__dict__ for dto in edges])
+        df_edges["route"] = df_edges["route"].apply(lambda x: x[:min(200, len(x))])
         if not df_edges.empty:
             df_edges.drop("graph", axis="columns", inplace=True)
             df_edges["geometry"] = df_edges["geometry"].apply(lambda x: x.as_shapely_geometry())
             gdf_edges = GeoDataFrame(df_edges, geometry="geometry", crs=4326)
-            total_geometry = box(*gdf_edges.total_bounds)
-
+            total_geometry = concave_hull(gdf_edges.union_all(), ratio=0.5)
+            logger.info(f"Selected geometry - {total_geometry}")
         df_nodes = DataFrame(data=[dto.__dict__ for dto in nodes])
+        df_nodes["route"] = df_nodes["route"].apply(lambda x: x[:min(200, len(x))])
         if not df_edges.empty:
-            df_nodes = await self.node_service.create_many(df_nodes, total_geometry)
+            df_nodes, nodes_uploaded = await self.node_service.create_many(df_nodes, total_geometry)
         else:
-            df_nodes = await self.node_service.create_many(df_nodes, None)
+            df_nodes, nodes_uploaded = await self.node_service.create_many(df_nodes, None)
         new_nodes_id = df_nodes["new_id"].astype(int).to_dict()
         
+        await asyncio.sleep(5)
         if not df_edges.empty:
             df_edges["u"] = df_edges["u"].map(new_nodes_id)
             df_edges["v"] = df_edges["v"].map(new_nodes_id)
-            df_edges = await self.edge_service.create_many(df_edges, total_geometry)
+            df_edges, edges_uploaded = await self.edge_service.create_many(df_edges, total_geometry)
     
-            ships = await self.create_many(graph, df_edges["new_id"], total_geometry)
-            return ships["new_id"]
+            ships, ships_uploaded = await self.create_many(graph, df_edges["new_id"], total_geometry)
+            return {
+                "result": "success",
+                "details": {
+                    "nodes": {
+                        "amount": nodes_uploaded,
+                        "status": "uploaded",
+                    },
+                    "edges": {
+                        "amount": edges_uploaded,
+                        "status": "uploaded",
+                    },
+                    "relationships": {
+                        "amount": ships_uploaded,
+                        "status": "uploaded",
+                    }
+                }
+            }
         else:
-            return []
+            return {
+                "result": "success",
+                "details": {
+                    "nodes": {
+                        "amount": nodes_uploaded,
+                        "status": "uploaded",
+                    },
+                    "edges": {
+                        "amount": 0,
+                        "status": "uploaded",
+                    },
+                    "relationships": {
+                        "amount": 0,
+                        "status": "uploaded",
+                    }
+                }
+            }
     
     async def build_nx_graph(self, dto: SelectGraphWithEdgesDTO) -> tuple[dict, GeoDataFrame, GeoDataFrame]:
         """Build multidimensional graph.
@@ -319,16 +357,25 @@ class GraphService:
         Returns:
             list[int]: list of edge ids.
         """
+        node_u = aliased(nodes)
+        node_v = aliased(nodes)
         
         statement = (
             select(graph_edges.c.edge)
             .select_from(graph_edges)
             .join(edges, edges.c.id == graph_edges.c.edge, isouter=True)
-            .join(nodes, or_(nodes.c.id == edges.c.u, nodes.c.id == edges.c.v))
-            .where(geofunc.ST_Intersects(
-                geofunc.ST_GeomFromText(str(geometry), text("4326")),
-                nodes.c.point
-            ))
+            .join(node_u, node_u.c.id == edges.c.u)
+            .join(node_v, node_v.c.id == edges.c.v)
+            .where(
+                geofunc.ST_Intersects(
+                    geofunc.ST_GeomFromText(str(geometry), text("4326")),
+                    node_u.c.point
+                ),
+                geofunc.ST_Intersects(
+                    geofunc.ST_GeomFromText(str(geometry), text("4326")),
+                    node_v.c.point
+                )
+            )
             .where(graph_edges.c.graph == graph)
         )
         

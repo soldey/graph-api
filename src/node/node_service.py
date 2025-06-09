@@ -73,7 +73,7 @@ class NodeService:
         logger.info("Node committed")
         return NodeEntity(**result)
     
-    async def create_many(self, df_nodes: DataFrame, geometry: BaseGeometry) -> DataFrame:
+    async def create_many(self, df_nodes: DataFrame, geometry: BaseGeometry) -> tuple[DataFrame, int]:
         """Bulk node creation.
         
         Args:
@@ -148,7 +148,7 @@ class NodeService:
                 df_nodes, df = await self._conflict_resolver(e, df_nodes, df)
         (self.csv_dir / csv_name).unlink()
         df_nodes["new_id"] = df_nodes["new_id"].astype(int)
-        return df_nodes
+        return df_nodes, len(res)
     
     async def _conflict_resolver(self, e: Exception, df_nodes: DataFrame, df: DataFrame) -> tuple[DataFrame, DataFrame]:
         """Conflict resolver for bulk upload.
