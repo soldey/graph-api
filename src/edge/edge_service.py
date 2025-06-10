@@ -11,6 +11,7 @@ from loguru import logger
 from pandas import DataFrame
 from shapely import from_wkb
 from shapely.geometry.base import BaseGeometry
+from shapely.geometry.geo import shape
 from sqlalchemy import insert, cast, text, select, delete, or_, distinct
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -372,7 +373,6 @@ class EdgeService:
                     )
                 ))
             )
-        statement = statement.limit(100)
         logger.info("executing edge query")
         query_results = (await self.database.execute_query(statement))
         logger.info("finished executing query")
@@ -381,7 +381,9 @@ class EdgeService:
         if dto.return_type == "entity":
             return [EdgeEntity(**result) for result in results]
         else:
-            return DataFrame(data=[edge for edge in results])
+            df = DataFrame(data=list(results))
+            df["geometry"] = df["geometry"].apply(lambda x: shape(x) if x else None)
+            return df
     
     async def delete_edge(self, edge_id: int):
         """Delete existing edge by id.

@@ -4,7 +4,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
-import networkx as nx
 import pandas as pd
 from asyncpg import UniqueViolationError
 from fastapi import HTTPException
@@ -13,11 +12,10 @@ from geopandas import GeoDataFrame
 from loguru import logger
 from matplotlib.pyplot import savefig, clf
 from networkx import MultiDiGraph
-from pandas import DataFrame, MultiIndex, notna
-from shapely.constructive import concave_hull
+from pandas import DataFrame
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.geo import box
-from sqlalchemy import insert, select, delete, text, or_
+from sqlalchemy import insert, select, delete, text
 from sqlalchemy.orm import aliased
 
 from src.common.db.database import DatabaseModule
@@ -207,7 +205,7 @@ class GraphService:
             df_edges.drop("graph", axis="columns", inplace=True)
             df_edges["geometry"] = df_edges["geometry"].apply(lambda x: x.as_shapely_geometry())
             gdf_edges = GeoDataFrame(df_edges, geometry="geometry", crs=4326)
-            total_geometry = concave_hull(gdf_edges.union_all(), ratio=0.5)
+            total_geometry = box(*gdf_edges.total_bounds)
             logger.info(f"Selected geometry - {total_geometry}")
         df_nodes = DataFrame(data=[dto.__dict__ for dto in nodes])
         df_nodes["route"] = df_nodes["route"].apply(lambda x: x[:min(200, len(x))])
