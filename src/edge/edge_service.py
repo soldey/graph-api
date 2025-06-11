@@ -114,9 +114,11 @@ class EdgeService:
         df_edges["geometry"] = df_edges["geometry"].apply(lambda x: str(x))
         
         logger.info("started selecting existing edges")
-        existing_edges_df = await self.select_many(SelectEdgesDTO(geometry=Geometry.from_shapely_geometry(geometry), return_type="dataframe"))
+        existing_edges = await self.select_many(SelectEdgesDTO(geometry=Geometry.from_shapely_geometry(geometry), return_type="entity"))
         logger.info("finished selecting existing edges")
-        if len(existing_edges_df) != 0:
+        if len(existing_edges) != 0:
+            
+            existing_edges_df = DataFrame(data=[entity.__dict__ for entity in existing_edges])
             logger.info("started preparing data")
             existing_edges_df["type"] = existing_edges_df["type"].apply(lambda x: x.value)
             existing_edges_df["weight_type"] = existing_edges_df["weight_type"].apply(lambda x: x.value)

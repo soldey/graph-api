@@ -200,7 +200,7 @@ class GraphService:
         logger.info("Starting bulk graph upload")
         
         df_edges = DataFrame(data=[dto.__dict__ for dto in edges])
-        df_edges["route"] = df_edges["route"].apply(lambda x: x[:min(200, len(x))])
+        df_edges["route"] = df_edges["route"].apply(lambda x: x[:min(200, len(x))].replace('\"', ''))
         if not df_edges.empty:
             df_edges.drop("graph", axis="columns", inplace=True)
             df_edges["geometry"] = df_edges["geometry"].apply(lambda x: x.as_shapely_geometry())
@@ -208,7 +208,7 @@ class GraphService:
             total_geometry = box(*gdf_edges.total_bounds)
             logger.info(f"Selected geometry - {total_geometry}")
         df_nodes = DataFrame(data=[dto.__dict__ for dto in nodes])
-        df_nodes["route"] = df_nodes["route"].apply(lambda x: x[:min(200, len(x))])
+        df_nodes["route"] = df_nodes["route"].apply(lambda x: x[:min(200, len(x))].replace('\"', ''))
         if not df_edges.empty:
             df_nodes, nodes_uploaded = await self.node_service.create_many(df_nodes, total_geometry)
         else:
