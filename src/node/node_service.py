@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 
 import numpy
@@ -122,7 +123,8 @@ class NodeService:
             df_nodes["point"] = df_nodes["point"].apply(lambda x: "SRID=4326; " + str(x))
             df = df_nodes.copy()
             df.drop(columns=["new_id"], inplace=True)
-            
+
+        df["properties"] = df["properties"].apply(lambda x: json.dumps(x))
         
         logger.info("Starting bulk nodes upload")
         

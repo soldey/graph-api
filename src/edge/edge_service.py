@@ -1,5 +1,6 @@
 import csv
 import hashlib
+import json
 from pathlib import Path
 
 import shapely.geometry as geom
@@ -166,6 +167,8 @@ class EdgeService:
             df_edges["geometry"] = df_edges["geometry"].apply(lambda x: "SRID=4326; " + str(x))
             df = df_edges.copy()
             df.drop(columns=["new_id"], inplace=True)
+        
+        df["properties"] = df["properties"].apply(lambda x: json.dumps(x))
         
         logger.info("Starting bulk edge upload")
 
