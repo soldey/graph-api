@@ -19,10 +19,10 @@ from sqlalchemy import insert, select, delete, text
 from sqlalchemy.orm import aliased
 
 from src.common.db.database import DatabaseModule
-from src.common.db.entities.edges import edges
+from src.common.db.entities.edges import edges, EdgeTypeEnum
 from src.common.db.entities.graph_edges import graph_edges
 from src.common.db.entities.graphs import graphs
-from src.common.db.entities.nodes import nodes
+from src.common.db.entities.nodes import nodes, NodeTypeEnum
 from src.edge.dto.create_edge_dto import CreateEdgeDTO
 from src.edge.dto.select_edges_dto import SelectEdgesDTO
 from src.edge.edge_entity import EdgeEntity
@@ -416,13 +416,27 @@ class GraphService:
             graph = await self.select_one(dto.id_or_name)
         else:
             graph = None
+        if dto.type == "intermodal":
+            selected_edge_types = [_type for _type in EdgeTypeEnum if _type != EdgeTypeEnum.WATERCHANNEL]
+            selected_node_types = [_type for _type in NodeTypeEnum]
+        elif dto.type == "water":
+            selected_edge_types = EdgeTypeEnum.WATERCHANNEL
+            selected_node_types = NodeTypeEnum.WALK
+        elif dto.type == "drive":
+            selected_edge_types = EdgeTypeEnum.DRIVE
+            selected_node_types = NodeTypeEnum.DRIVE
+        else:
+            selected_edge_types = EdgeTypeEnum.WALK
+            selected_node_types = NodeTypeEnum.WALK
         edges = await self.edge_service.select_many(SelectEdgesDTO(
             graph=None if graph is None else graph.id,
             geometry=dto.geometry,
+            type=selected_edge_types,
         ))
         nodes = await self.node_service.select_many(SelectNodesDTO(
             graph=None if graph is None else graph.id,
             geometry=dto.geometry,
+            type=selected_node_types,
         ))
         return graph, edges, nodes
 

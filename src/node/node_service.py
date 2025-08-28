@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.common.db.database import DatabaseModule
 from src.common.db.entities.edges import edges
 from src.common.db.entities.graph_edges import graph_edges
-from src.common.db.entities.nodes import nodes
+from src.common.db.entities.nodes import nodes, NodeTypeEnum
 from src.common.geometries import Geometry
 from src.node.dto.create_node_dto import CreateNodeDTO
 from src.node.dto.select_nodes_dto import SelectNodesDTO
@@ -301,8 +301,10 @@ class NodeService:
                 .join(graph_edges, edges.c.id == graph_edges.c.edge)
                 .where(graph_edges.c.graph == dto.graph)
             )
-        if dto.type:
+        if type(dto.type) is NodeTypeEnum:
             statement = statement.where(nodes.c.type == dto.type)
+        if type(dto.type) is list:
+            statement = statement.where(nodes.c.type.in_(dto.type))
         if dto.geometry:
             statement = statement.where(geofunc.ST_Intersects(
                 geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from src.common.db.database import DatabaseModule
-from src.common.db.entities.edges import edges
+from src.common.db.entities.edges import edges, EdgeTypeEnum
 from src.common.db.entities.graph_edges import graph_edges
 from src.common.db.entities.nodes import nodes
 from src.common.geometries import Geometry
@@ -357,8 +357,10 @@ class EdgeService:
                 statement
                 .join(graph_edges, edges.c.id == graph_edges.c.edge, isouter=True)
                 .where(graph_edges.c.graph == dto.graph))
-        if dto.type:
+        if type(dto.type) is EdgeTypeEnum:
             statement = statement.where(edges.c.type == dto.type)
+        if type(dto.type) is list:
+            statement = statement.where(edges.c.type.in_(dto.type))
         if dto.level:
             statement = statement.where(edges.c.level == dto.level)
         if dto.geometry:
