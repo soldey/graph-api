@@ -21,6 +21,7 @@ async def logging_dependency(request: Request):
 
 
 app = FastAPI(
+    title="Graph API",
     root_path="/api/v1",
     version="1.4.0",
     lifespan=lifespan
