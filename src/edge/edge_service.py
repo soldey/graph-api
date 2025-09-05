@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import hashlib
 import json
@@ -13,10 +14,11 @@ from pandas import DataFrame
 from shapely import from_wkb
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.geo import shape
-from sqlalchemy import insert, cast, text, select, delete, or_, distinct
+from sqlalchemy import insert, cast, text, select, delete, or_, distinct, Select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
+from sqlalchemy.sql.functions import count
 
 from src.common.db.database import DatabaseModule
 from src.common.db.entities.edges import edges, EdgeTypeEnum
@@ -352,6 +354,27 @@ class EdgeService:
             .select_from(edges)
         )
         
+        queries = []
+        if type(dto.type) is list:
+            for _type in dto.type:
+                dto_copy = dto.model_copy()
+                dto_copy.type = _type
+                queries.append(self.database.execute_query(await self._form_query(statement, dto_copy)))
+            for i in range(0, len(dto.type), 2):
+                queries[i:min(len(dto.type), i + 2)] = await asyncio.gather(*queries[i:min(len(dto.type), i + 2)])
+        else:
+            queries = [await self.database.execute_query(await self._form_query(statement, dto))]
+        logger.info("finished executing query")
+        results = sum([query.mappings().all() for query in queries], [])
+        logger.info(f"finished generating edge query, length - {len(results)}")
+        if dto.return_type == "entity":
+            return [EdgeEntity(**result) for result in results]
+        else:
+            df = DataFrame(data=list(results))
+            df["geometry"] = df["geometry"].apply(lambda x: shape(x) if x else None)
+            return df
+    
+    async def _form_query(self, statement, dto: SelectEdgesDTO):
         if dto.graph:
             statement = (
                 statement
@@ -359,8 +382,6 @@ class EdgeService:
                 .where(graph_edges.c.graph == dto.graph))
         if type(dto.type) is EdgeTypeEnum:
             statement = statement.where(edges.c.type == dto.type)
-        if type(dto.type) is list:
-            statement = statement.where(edges.c.type.in_(dto.type))
         if dto.level:
             statement = statement.where(edges.c.level == dto.level)
         if dto.geometry:
@@ -371,7 +392,7 @@ class EdgeService:
                 .join(node_v, node_v.c.id == edges.c.v)
                 .where(or_(
                     geofunc.ST_Intersects(
-                    geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
+                        geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
                         node_u.c.point
                     ),
                     geofunc.ST_Intersects(
@@ -380,17 +401,7 @@ class EdgeService:
                     )
                 ))
             )
-        logger.info("executing edge query")
-        query_results = (await self.database.execute_query(statement))
-        logger.info("finished executing query")
-        results = query_results.mappings().all()
-        logger.info(f"finished generating edge query, length - {len(results)}")
-        if dto.return_type == "entity":
-            return [EdgeEntity(**result) for result in results]
-        else:
-            df = DataFrame(data=list(results))
-            df["geometry"] = df["geometry"].apply(lambda x: shape(x) if x else None)
-            return df
+        return statement
     
     async def delete_edge(self, edge_id: int):
         """Delete existing edge by id.
