@@ -1,5 +1,6 @@
 import json
 import pickle
+from http.client import HTTPException
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Body, Query
@@ -60,8 +61,11 @@ async def add_edge_bulk(
 @graph_router.post("/build", response_model=dict)
 async def build_nx_graph(dto: Annotated[SelectGraphWithEdgesDTO, Depends(SelectGraphWithEdgesDTO)]):
     logger.info(f"Call - {_router_prefix}/build")
-
-    graph_attrs, edges, nodes = await graph_service.build_nx_graph(dto)
+    
+    try:
+        graph_attrs, edges, nodes = await graph_service.build_nx_graph(dto)
+    except Exception as e:
+        raise HTTPException(500, str(e))
     return {
         "attributes": graph_attrs,
         "edges": json.loads(edges.to_json()),
