@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 from pathlib import Path
@@ -13,9 +14,10 @@ from numpy.f2py.crackfortran import include_paths
 from pandas import DataFrame
 from shapely import from_wkb
 from shapely.geometry.base import BaseGeometry
-from sqlalchemy import insert, text, cast, select, or_, delete, distinct
+from sqlalchemy import insert, text, cast, select, or_, delete, distinct, union
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from src.common.db.database import DatabaseModule
 from src.common.db.entities.edges import edges
@@ -283,35 +285,110 @@ class NodeService:
             list[NodeEntity]: list of nodes.
         """
         
-        statement = (
+        node_u = aliased(nodes, name="node_u")
+        node_v = aliased(nodes, name="node_v")
+        
+        statement_u = (
             select(
-                distinct(nodes.c.id),
-                nodes.c.type,
-                nodes.c.properties,
-                nodes.c.route,
-                cast(geofunc.ST_AsGeoJSON(nodes.c.point), JSONB).label("point"),
-                nodes.c.created_at,
-                nodes.c.updated_at,
+                distinct(node_u.c.id).label("id"),
+                node_u.c.type,
+                node_u.c.properties,
+                node_u.c.route,
+                cast(geofunc.ST_AsGeoJSON(node_u.c.point), JSONB).label("point"),
+                node_u.c.created_at,
+                node_u.c.updated_at,
             )
-            .select_from(nodes)
+            .select_from(edges)
         )
         if dto.graph is not None:
-            statement = (
-                statement.join(edges, or_(nodes.c.id == edges.c.u, nodes.c.id == edges.c.v))
-                .join(graph_edges, edges.c.id == graph_edges.c.edge)
-                .where(graph_edges.c.graph == dto.graph)
-            )
-        if type(dto.type) is NodeTypeEnum:
-            statement = statement.where(nodes.c.type == dto.type)
-        if type(dto.type) is list:
-            statement = statement.where(nodes.c.type.in_(dto.type))
+            statement_u = (
+                statement_u
+                .join(graph_edges, edges.c.id == graph_edges.c.edge, isouter=True)
+                .where(graph_edges.c.graph == dto.graph))
         if dto.geometry:
-            statement = statement.where(geofunc.ST_Intersects(
-                geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
-                nodes.c.point
-            ))
-        results = (await self.database.execute_query(statement)).mappings().all()
+            statement_u = (
+                statement_u.join(node_u, node_u.c.id == edges.c.u)
+                .join(node_v, node_v.c.id == edges.c.v)
+                .where(or_(
+                    geofunc.ST_Intersects(
+                        geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
+                        node_u.c.point
+                    ),
+                    geofunc.ST_Intersects(
+                        geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
+                        node_v.c.point
+                    )
+                ))
+            )
+        
+        statement_v = (
+            select(
+                distinct(node_v.c.id).label("id"),
+                node_v.c.type,
+                node_v.c.properties,
+                node_v.c.route,
+                cast(geofunc.ST_AsGeoJSON(node_v.c.point), JSONB).label("point"),
+                node_v.c.created_at,
+                node_v.c.updated_at,
+            )
+            .select_from(edges)
+        )
+        if dto.graph is not None:
+            statement_v = (
+                statement_v
+                .join(graph_edges, edges.c.id == graph_edges.c.edge, isouter=True)
+                .where(graph_edges.c.graph == dto.graph))
+        if dto.geometry:
+            statement_v = (
+                statement_v.join(node_u, node_u.c.id == edges.c.u)
+                .join(node_v, node_v.c.id == edges.c.v)
+                .where(or_(
+                    geofunc.ST_Intersects(
+                        geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
+                        node_u.c.point
+                    ),
+                    geofunc.ST_Intersects(
+                        geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
+                        node_v.c.point
+                    )
+                ))
+            )
+        
+        queries = []
+        if type(dto.type) is list:
+            for _type in dto.type:
+                dto_copy = dto.model_copy()
+                dto_copy.type = _type
+                queries.append(self.database.execute_query(await self._form_query(statement_u, statement_v, node_u, node_v, dto_copy)))
+            for i in range(0, len(dto.type), 2):
+                queries[i:min(len(dto.type), i + 2)] = await asyncio.gather(*queries[i:min(len(dto.type), i + 2)])
+        else:
+            queries = [await self.database.execute_query(await self._form_query(statement_u, statement_v, node_u, node_v, dto))]
+        results = sum([query.mappings().all() for query in queries], [])
+        logger.info(f"finished executing query, length - {len(results)}")
         return [NodeEntity(**result) for result in results]
+    
+    async def _form_query(self, statement_u, statement_v, node_u, node_v, dto: SelectNodesDTO):
+        if type(dto.type) is NodeTypeEnum:
+            statement_u = statement_u.where(node_u.c.type == dto.type)
+        if type(dto.type) is NodeTypeEnum:
+            statement_v = statement_v.where(node_v.c.type == dto.type)
+
+        union_statement = union(statement_u, statement_v).cte("union_query")
+        statement = (
+            select(
+                distinct(union_statement.c.id).label("id"),
+                union_statement.c.type,
+                union_statement.c.properties,
+                union_statement.c.route,
+                union_statement.c.point,
+                union_statement.c.created_at,
+                union_statement.c.updated_at,
+            )
+            .select_from(union_statement)
+        )
+        return statement
+        
     
     async def delete_node(self, node_id: int):
         """Delete existing node by id.

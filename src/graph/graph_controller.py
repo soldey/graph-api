@@ -1,10 +1,7 @@
 import json
-import pickle
-from http.client import HTTPException
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Body, Query
-from fastapi.responses import PlainTextResponse
+from fastapi import APIRouter, Depends, Path, Body, Query, HTTPException
 from loguru import logger
 from starlette.responses import Response
 
