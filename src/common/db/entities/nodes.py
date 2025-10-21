@@ -17,6 +17,7 @@ class NodeTypeEnum(enum.Enum):
     BUS = "BUS"
     TROLLEYBUS = "TROLLEYBUS"
     SUBWAY = "SUBWAY"
+    WATER = "WATER"
 
 
 func: Callable

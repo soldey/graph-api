@@ -418,10 +418,10 @@ class GraphService:
             graph = None
         if dto.type == "intermodal":
             selected_edge_types = [_type for _type in EdgeTypeEnum if _type not in [EdgeTypeEnum.WATERCHANNEL, EdgeTypeEnum.DRIVE]]
-            selected_node_types = [_type for _type in NodeTypeEnum if _type != NodeTypeEnum.DRIVE]
+            selected_node_types = [_type for _type in NodeTypeEnum if _type not in [NodeTypeEnum.DRIVE, NodeTypeEnum.WATER]]
         elif dto.type == "water":
             selected_edge_types = EdgeTypeEnum.WATERCHANNEL
-            selected_node_types = NodeTypeEnum.WALK
+            selected_node_types = NodeTypeEnum.WATER
         elif dto.type == "drive":
             selected_edge_types = EdgeTypeEnum.DRIVE
             selected_node_types = NodeTypeEnum.DRIVE
