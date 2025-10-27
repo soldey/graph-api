@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 
 import numpy
@@ -14,7 +15,7 @@ from numpy.f2py.crackfortran import include_paths
 from pandas import DataFrame
 from shapely import from_wkb
 from shapely.geometry.base import BaseGeometry
-from sqlalchemy import insert, text, cast, select, or_, delete, distinct, union
+from sqlalchemy import insert, text, cast, select, or_, delete, distinct, union, and_
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -308,17 +309,12 @@ class NodeService:
         if dto.geometry:
             statement_u = (
                 statement_u.join(node_u, node_u.c.id == edges.c.u)
-                .join(node_v, node_v.c.id == edges.c.v)
-                .where(or_(
+                .where(
                     geofunc.ST_Intersects(
                         geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
                         node_u.c.point
-                    ),
-                    geofunc.ST_Intersects(
-                        geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
-                        node_v.c.point
                     )
-                ))
+                )
             )
         
         statement_v = (
@@ -336,24 +332,18 @@ class NodeService:
         if dto.graph is not None:
             statement_v = (
                 statement_v
-                .join(graph_edges, edges.c.id == graph_edges.c.edge, isouter=True)
-                .where(graph_edges.c.graph == dto.graph))
+                .join(graph_edges, and_(edges.c.id == graph_edges.c.edge, graph_edges.c.graph == dto.graph))
+            )
         if dto.geometry:
             statement_v = (
-                statement_v.join(node_u, node_u.c.id == edges.c.u)
-                .join(node_v, node_v.c.id == edges.c.v)
-                .where(or_(
-                    geofunc.ST_Intersects(
-                        geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
-                        node_u.c.point
-                    ),
+                statement_v.join(node_v, node_v.c.id == edges.c.v)
+                .where(
                     geofunc.ST_Intersects(
                         geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
                         node_v.c.point
                     )
-                ))
+                )
             )
-        
         queries = []
         if type(dto.type) is list:
             for _type in dto.type:
@@ -366,7 +356,8 @@ class NodeService:
             queries = [await self.database.execute_query(await self._form_query(statement_u, statement_v, node_u, node_v, dto))]
         results = sum([query.mappings().all() for query in queries], [])
         logger.info(f"finished executing query, length - {len(results)}")
-        return [NodeEntity(**result) for result in results]
+        data = [NodeEntity(**result) for result in results]
+        return data
     
     async def _form_query(self, statement_u, statement_v, node_u, node_v, dto: SelectNodesDTO):
         if type(dto.type) is NodeTypeEnum:

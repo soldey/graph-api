@@ -2,7 +2,9 @@ import asyncio
 import csv
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
+from timeit import timeit
 
 import shapely.geometry as geom
 from asyncpg import UniqueViolationError
@@ -14,7 +16,7 @@ from pandas import DataFrame
 from shapely import from_wkb
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.geo import shape
-from sqlalchemy import insert, cast, text, select, delete, or_, distinct, Select
+from sqlalchemy import insert, cast, text, select, delete, or_, distinct, Select, and_
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -353,7 +355,6 @@ class EdgeService:
             )
             .select_from(edges)
         )
-        
         queries = []
         if type(dto.type) is list:
             for _type in dto.type:
@@ -368,38 +369,32 @@ class EdgeService:
         results = sum([query.mappings().all() for query in queries], [])
         logger.info(f"finished generating edge query, length - {len(results)}")
         if dto.return_type == "entity":
-            return [EdgeEntity(**result) for result in results]
+            data = [EdgeEntity(**result) for result in results]
+            return data
         else:
             df = DataFrame(data=list(results))
             df["geometry"] = df["geometry"].apply(lambda x: shape(x) if x else None)
             return df
     
-    async def _form_query(self, statement, dto: SelectEdgesDTO):
+    async def _form_query(self, statement: Select, dto: SelectEdgesDTO):
         if dto.graph:
             statement = (
                 statement
-                .join(graph_edges, edges.c.id == graph_edges.c.edge, isouter=True)
-                .where(graph_edges.c.graph == dto.graph))
+                .join(graph_edges, and_(edges.c.id == graph_edges.c.edge, graph_edges.c.graph == dto.graph))
+            )
         if type(dto.type) is EdgeTypeEnum:
             statement = statement.where(edges.c.type == dto.type)
         if dto.level:
             statement = statement.where(edges.c.level == dto.level)
         if dto.geometry:
-            node_u = aliased(nodes)
-            node_v = aliased(nodes)
             statement = (
-                statement.join(node_u, node_u.c.id == edges.c.u)
-                .join(node_v, node_v.c.id == edges.c.v)
-                .where(or_(
+                statement
+                .where(
                     geofunc.ST_Intersects(
                         geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
-                        node_u.c.point
-                    ),
-                    geofunc.ST_Intersects(
-                        geofunc.ST_GeomFromText(str(dto.geometry.as_shapely_geometry()), text("4326")),
-                        node_v.c.point
+                        edges.c.geometry
                     )
-                ))
+                )
             )
         return statement
     

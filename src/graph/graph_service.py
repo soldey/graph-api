@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import hashlib
 from io import BytesIO
 from pathlib import Path
@@ -13,6 +14,7 @@ from loguru import logger
 from matplotlib.pyplot import savefig, clf
 from networkx import MultiDiGraph
 from pandas import DataFrame
+from shapely.constructive import concave_hull
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.geo import box
 from sqlalchemy import insert, select, delete, text
@@ -23,6 +25,7 @@ from src.common.db.entities.edges import edges, EdgeTypeEnum
 from src.common.db.entities.graph_edges import graph_edges
 from src.common.db.entities.graphs import graphs
 from src.common.db.entities.nodes import nodes, NodeTypeEnum
+from src.common.geometries import Geometry
 from src.edge.dto.create_edge_dto import CreateEdgeDTO
 from src.edge.dto.select_edges_dto import SelectEdgesDTO
 from src.edge.edge_entity import EdgeEntity
@@ -412,6 +415,9 @@ class GraphService:
         Raises:
             HTTPException: 404 if graph wasn't found.
         """
+        
+        if dto.geometry:
+            dto.geometry = Geometry.from_shapely_geometry(concave_hull(dto.geometry.as_shapely_geometry().segmentize(0.01), ratio=0.1, allow_holes=False))
         if dto.id_or_name is not None:
             graph = await self.select_one(dto.id_or_name)
         else:
